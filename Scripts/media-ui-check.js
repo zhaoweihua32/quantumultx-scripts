@@ -1,84 +1,79 @@
-/**************************************
- * Streaming Unlock Check (Quantumult X)
- * Compatible with QX 598+
- **************************************/
+/*****************************************
+ * Streaming Unlock Check
+ * Quantumult X v1.8.6 Compatible
+ * event-interaction ONLY
+ *****************************************/
 
-const timeout = 3000;
 const policy = $environment.params;
+const timeout = 3000;
 
-// ====== 基础工具 ======
-function qxFetch(options) {
-  return $task.fetch({
-    ...options,
-    policy,
-    timeout,
+let result = [];
+
+// ====== 工具函数 ======
+function fetch(url, callback) {
+  $task.fetch({
+    url: url,
+    policy: policy,
+    timeout: timeout
+  }).then(
+    resp => callback(null, resp),
+    err => callback(err, null)
+  );
+}
+
+// ====== Netflix ======
+function checkNetflix(next) {
+  fetch("https://www.netflix.com/title/81215567", (err, resp) => {
+    if (err || !resp) {
+      result.push("❌ Netflix 连接失败");
+    } else if (resp.status === 200) {
+      result.push("✅ Netflix 可用");
+    } else {
+      result.push("⚠️ Netflix 受限");
+    }
+    next();
   });
 }
 
-function done(title, content) {
-  $done({
-    title,
-    content,
-    icon: "checkmark.seal.system",
-    "icon-color": "#2ecc71",
+// ====== YouTube ======
+function checkYouTube(next) {
+  fetch("https://www.youtube.com/premium", (err, resp) => {
+    if (err || !resp) {
+      result.push("❌ YouTube 连接失败");
+    } else if (resp.status === 200) {
+      result.push("✅ YouTube Premium 可用");
+    } else {
+      result.push("⚠️ YouTube 受限");
+    }
+    next();
   });
 }
 
-// ====== 检测逻辑 ======
-async function checkNetflix() {
-  try {
-    const resp = await qxFetch({
-      url: "https://www.netflix.com/title/81215567",
-    });
-    return resp.status === 200 ? "✅ Netflix 可用" : "⚠️ Netflix 受限";
-  } catch {
-    return "❌ Netflix 失败";
-  }
+// ====== ChatGPT ======
+function checkChatGPT(next) {
+  fetch("https://chat.openai.com/cdn-cgi/trace", (err, resp) => {
+    if (err || !resp || !resp.body) {
+      result.push("❌ ChatGPT 连接失败");
+    } else {
+      const m = resp.body.match(/loc=([A-Z]{2})/);
+      if (m) {
+        result.push("✅ ChatGPT 可用（" + m[1] + "）");
+      } else {
+        result.push("⚠️ ChatGPT 区域未知");
+      }
+    }
+    next();
+  });
 }
 
-async function checkYouTube() {
-  try {
-    const resp = await qxFetch({
-      url: "https://www.youtube.com/premium",
+// ====== 执行链（串行，老版最稳） ======
+checkNetflix(() => {
+  checkYouTube(() => {
+    checkChatGPT(() => {
+      $done({
+        title: "📺 流媒体解锁检测",
+        content: result.join("\n")
+      });
     });
-    return resp.status === 200 ? "✅ YouTube Premium 可用" : "⚠️ YouTube 受限";
-  } catch {
-    return "❌ YouTube 失败";
-  }
-}
-
-async function checkDisney() {
-  try {
-    const resp = await qxFetch({
-      url: "https://www.disneyplus.com/",
-    });
-    return resp.status === 200 ? "✅ Disney+ 可用" : "⚠️ Disney+ 受限";
-  } catch {
-    return "❌ Disney+ 失败";
-  }
-}
-
-async function checkChatGPT() {
-  try {
-    const resp = await qxFetch({
-      url: "https://chat.openai.com/cdn-cgi/trace",
-    });
-    const region = resp.body.match(/loc=([A-Z]{2})/)?.[1];
-    if (!region) return "⚠️ ChatGPT 未知区域";
-    return `✅ ChatGPT 可用（${region}）`;
-  } catch {
-    return "❌ ChatGPT 失败";
-  }
-}
-
-// ====== 主入口 ======
-(async () => {
-  const results = await Promise.all([
-    checkNetflix(),
-    checkYouTube(),
-    checkDisney(),
-    checkChatGPT(),
-  ]);
-
-  done("📺 流媒体解锁检测", results.join("\n"));
-})();
+  });
+});
